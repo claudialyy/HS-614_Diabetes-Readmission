@@ -1,0 +1,836 @@
+---
+title: "Final Project"
+author: "Claudia Lo"
+date: '2022-05-13'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Predicting Diabetes Readmission
+This diabetes dataset from https://archive.ics.uci.edu/ml/datasets/diabetes+130-us+hospitals+for+years+1999-2008 is a record of 10 years(1999-2008) of clinical care at 130 US hospitals. Through my study, I will explore which features have a high chance of affecting readmission and predict the probability of patient readmission.
+
+```{r}
+#set working directory
+getwd()
+setwd("C:/Users/claud/OneDrive/Desktop/MSDHI/spr 2022/HS 614 data analytics/final project")
+```
+```{r}
+#Import datasets
+readmission<-read.csv("./data/diabetic_data.csv",na.string="?",header = TRUE, sep = ",")
+```
+
+```{r}
+readmission_id<-read.csv("./data/IDs_mapping.csv",na.string="?",header = TRUE, sep = ",")
+readmission_id
+```
+
+```{r}
+head(readmission)
+```
+
+```{r}
+str(readmission)
+```
+
+```{r}
+summary(readmission)
+```
+
+```{r}
+nrow(readmission)
+ncol(readmission)
+```
+
+```{r}
+#count number of missing values
+colSums(is.na(readmission))
+```
+```{r}
+#change chr variables to factor
+readmission[sapply(readmission, is.character)] <- lapply(readmission[sapply(readmission, is.character)],as.factor)
+```
+
+```{r}
+str(readmission)
+```
+
+##Cleaning data
+```{r}
+#removing columns that are not useful and have a lot of missing values
+readmission <- readmission[, -c(1, 2, 6,11,12)]
+```
+
+```{r}
+nrow(readmission)
+ncol(readmission)
+```
+
+```{r}
+table(readmission$max_glu_serum)
+```
+
+```{r}
+table(readmission$A1Cresult)
+```
+
+```{r}
+readmission <- readmission[!readmission$max_glu_serum == "None", ]
+readmission <- readmission[!readmission$A1Cresult == "None", ]
+```
+
+```{r}
+nrow(readmission)
+```
+```{r}
+table(readmission$max_glu_serum)
+table(readmission$A1Cresult)
+```
+```{r}
+nrow(readmission)
+ncol(readmission)
+```
+
+##Classifying outcome variable into two groups
+```{r}
+table(readmission$readmitted)
+```
+```{r}
+#binary responses function
+binary = function(x){
+    if(x == '<30'| x == '>30'){
+        return('YES')
+    }else{ return('NO')}
+}
+```
+
+```{r}
+binary('<30')
+```
+```{r}
+binary('>30')
+```
+```{r}
+binary('NO')
+```
+```{r}
+readmission$readmitted <- sapply(readmission[,c('readmitted')], function(x) binary(x))
+```
+
+```{r}
+table(readmission$readmitted)
+```
+##EDA
+```{r}
+#barplot of outcome variable
+library(dplyr)
+library(ggplot2)
+df <- readmission %>%
+          filter(!is.na(readmitted)) %>% 
+          group_by(readmitted) %>%
+  summarise(count_m= n())
+        p <-ggplot(df, aes(x = readmitted, y = count_m)) +
+          geom_bar(fill = "#3DDAEB", stat = "identity") +
+          geom_text(aes(label = count_m), vjust = -0.25,size = 4) + 
+          theme(axis.text = element_text(colour = "blue"),text = element_text(size=10),axis.line = element_line(size = 4, colour = "grey80"),axis.text.x = element_text(angle = 90, vjust = 0.45, hjust=1)) + ylab("Number of readmissions") + xlab("Readmission") + ggtitle(labs(title = "Distribution of readmission"))
+p
+```
+
+```{r}
+#grouped barplot of gender and readmission
+d4 <- readmission %>%
+  group_by(readmitted,gender) %>%
+  summarise(count=n()) %>%
+  mutate(perc=count/sum(count))
+bar4 <- ggplot(data=d4, aes(x=readmitted, y=perc, fill=gender)) +
+  geom_bar(position = 'dodge', stat ='identity')+scale_y_continuous(labels = scales::percent)+labs(x = "readmission", y = "Percentage of readmissions", fill = "gender") + ggtitle(labs(title = "Readmissions by gender"))+ theme(text = element_text(size=10))+ geom_text(aes(label = scales::percent(perc),y = perc),position=position_dodge(width=0.7), vjust = -0.25,size=3.5)
+bar4  + facet_grid(. ~ readmitted,scales='free')
+```
+```{r}
+#grouped barplot of race and readmission
+d5 <- readmission %>%
+  group_by(readmitted,race) %>%
+  summarise(count=n()) %>%
+  mutate(perc=count/sum(count))
+bar4 <- ggplot(data=d5, aes(x=readmitted, y=perc, fill=race)) +
+  geom_bar(position = 'dodge', stat ='identity')+scale_y_continuous(labels = scales::percent)+labs(x = "readmission", y = "Percentage of readmissions", fill = "race") + ggtitle(labs(title = "Readmissions by race"))+ theme(text = element_text(size=10))+ geom_text(aes(label = scales::percent(perc),y = perc),position=position_dodge(width=0.7), vjust = -0.25,size=3.5)
+bar4  + facet_grid(. ~ readmitted,scales='free')
+```
+
+```{r}
+#density plot of time in hospital and age
+Densityplot <- ggplot(data = readmission,aes(x=time_in_hospital,fill= age ))+ geom_density(alpha = 0.9,cex=1)+ggtitle(labs(title = "Distribution of time in hospital by Age"))+theme(text = element_text(size=10))
+Densityplot
+```
+
+```{r}
+#grouped histogram of number of inpatient visits and age
+ggplot(readmission, aes(x = number_inpatient, fill = age)) + geom_histogram(colour = "black",binwidth = .5, lwd = .75, linetype= 1,position = "identity", alpha = 4) + labs(x = "number of inpatient visits", y = "Frequency", title = "Distribution of inpatient visits by Age")
+```
+
+```{r}
+#grouped barplot of age and readmission
+d6 <- readmission %>%
+  group_by(readmitted,age) %>%
+  summarise(count=n()) %>%
+  mutate(perc=count/sum(count))
+bar4 <- ggplot(data=d6, aes(x=readmitted, y=perc, fill=age)) +
+  geom_bar(position = 'dodge', stat ='identity')+scale_y_continuous(labels = scales::percent)+labs(x = "readmission", y = "Percentage of readmissions", fill = "age") + ggtitle(labs(title = "Readmissions by age"))+ theme(text = element_text(size=10))+ geom_text(aes(label = scales::percent(perc),y = perc),position=position_dodge(width=0.7), vjust = -0.25,size=3.5)
+bar4  + facet_grid(. ~ readmitted,scales='free')
+```
+
+```{r}
+#density plot of number of diagnoses and readmission
+Densityplot <- ggplot(data = readmission,aes(x=number_diagnoses,fill= readmitted ))+ geom_density(alpha = 0.9,cex=1)+ggtitle(labs(title = "Distribution of number of diagnoses by readmission"))+theme(text = element_text(size=10))
+Densityplot
+```
+
+```{r}
+class(readmission$discharge_disposition_id)
+class(readmission$admission_type_id)
+class(readmission$admission_source_id)
+```
+
+```{r}
+readmission$discharge_disposition_id <- as.factor(readmission$discharge_disposition_id)
+readmission$admission_type_id <- as.factor(readmission$admission_type_id)
+readmission$admission_source_id <- as.factor(readmission$admission_source_id)
+```
+
+```{r}
+str(readmission)
+```
+
+```{r}
+#dataset with numeric variables
+library(dplyr)
+readmission_num<-select_if(readmission,is.numeric)
+readmission_num
+```
+
+```{r}
+#correlation
+library(GGally)
+ggpairs(readmission_num)
+```
+
+#Creating dummy variables
+```{r}
+#create dummy variables
+library(caret)
+d <- predict(dummyVars(~discharge_disposition_id + admission_type_id + max_glu_serum + A1Cresult + admission_source_id, data = readmission), newdata = readmission)
+```
+
+```{r}
+#dataset of dummy variables
+head(d)
+```
+
+```{r}
+#checking column names
+colnames(d)
+```
+```{r}
+#renaming column names
+colnames(d)[colnames(d) == "max_glu_serum.>200"] <- "max_glu_serum.200"
+colnames(d)[colnames(d) == "max_glu_serum.>300"] <- "max_glu_serum.300" 
+colnames(d)[colnames(d) == "A1Cresult.>7"] <- "A1Cresult7"
+colnames(d)[colnames(d) == "A1Cresult.>8"] <- "A1Cresult8" 
+```
+
+```{r}
+colnames(d)
+```
+
+##Creating diagnosis variables for diag_1, diag_2, diag_3
+```{r}
+myData_d<-readmission
+```
+
+```{r}
+myData_d$diag_circ <- 0
+myData_d$diag_resp <- 0
+myData_d$diag_dig <- 0
+myData_d$diag_diab <- 0
+myData_d$diag_inj <- 0
+myData_d$diag_musc <-0
+myData_d$diag_geni <- 0
+myData_d$diag_neop <-0
+myData_d$diag_other <- 0
+```
+
+```{r}
+#create diagnosis variable for circulatory codes:390-459, 785 
+myData_d$diag_circ[(as.character( myData_d$diag_1) >= "390" & as.character( myData_d$diag_1) <= "459" |  as.character( myData_d$diag_1 ) =="785")
+                   | (as.character( myData_d$diag_2) >= "390" & as.character( myData_d$diag_2) <= "459" |  as.character( myData_d$diag_2 ) == "785")
+                   | (as.character( myData_d$diag_3) >= "390" & as.character( myData_d$diag_3) <= "459" |  as.character( myData_d$diag_3 ) == "785")] <- 1
+#create diagnosis variable for respiratory codes: 460-519, 786
+myData_d$diag_resp[(as.character( myData_d$diag_1) >= "460" & as.character( myData_d$diag_1) <= "519" |  as.character( myData_d$diag_1 ) == "786")
+                   | (as.character( myData_d$diag_2) >= "460" & as.character( myData_d$diag_2) <= "519" |  as.character( myData_d$diag_2 ) == "786")
+                   | (as.character( myData_d$diag_3) >= "460" & as.character( myData_d$diag_3) <= "519" |  as.character( myData_d$diag_3 ) == "786")] <- 1
+#create diagnosis variable for digestive codes: 520-579, 787
+myData_d$diag_dig[(as.character( myData_d$diag_1) >= "520" & as.character( myData_d$diag_1) <= "579" |  as.character( myData_d$diag_1 ) == "787")
+                  | (as.character( myData_d$diag_2) >= "520" & as.character( myData_d$diag_2) <= "579" |  as.character( myData_d$diag_2 ) == "787")
+                  | (as.character( myData_d$diag_3) >= "520" & as.character( myData_d$diag_3) <= "579" |  as.character( myData_d$diag_3 ) == "787")] <- 1
+#create diagnosis variable for diabetes mellitus codes: 250.xx
+myData_d$diag_diab[(as.character(myData_d$diag_1) > "249" & as.character(myData_d$diag_1) < "251")
+                   | (as.character(myData_d$diag_2) > "249" & as.character(myData_d$diag_2) < "251")
+                   | (as.character(myData_d$diag_3) > "249" & as.character(myData_d$diag_3) < "251")] <- 1
+#create diagnosis variable for injury codes: 800-999
+myData_d$diag_inj[(as.character( myData_d$diag_1) >= "800" & as.character( myData_d$diag_1) <= "999")
+                  | (as.character( myData_d$diag_2) >= "800" & as.character( myData_d$diag_2) <= "999")
+                  | (as.character( myData_d$diag_3) >= "800" & as.character( myData_d$diag_3) <= "999")] <- 1
+#create diagnosis variable for musculoskeletal codes: 710-739
+myData_d$diag_musc[(as.character( myData_d$diag_1) >= "710" & as.character( myData_d$diag_1) <= "739")
+                   | (as.character( myData_d$diag_2) >= "710" & as.character( myData_d$diag_2) <= "739")
+                   | (as.character( myData_d$diag_3) >= "710" & as.character( myData_d$diag_3) <= "739")] <- 1
+#create diagnosis variable for genitourinary codes: 580-629, 788
+myData_d$diag_geni[(as.character( myData_d$diag_1) >= "580" & as.character( myData_d$diag_1) <= "629" |  as.character( myData_d$diag_1 ) == "788")
+                   | (as.character( myData_d$diag_2) >= "580" & as.character( myData_d$diag_2) <= "629" |  as.character( myData_d$diag_2 ) == "788")
+                   | (as.character( myData_d$diag_3) >= "580" & as.character( myData_d$diag_3) <= "629" |  as.character( myData_d$diag_3 ) == "788")] <- 1
+#create diagnosis variable for neoplasms codes: 140-239
+myData_d$diag_neop[(as.character( myData_d$diag_1) >= "140" & as.character( myData_d$diag_1) <= "239")
+                   | (as.character( myData_d$diag_2) >= "140" & as.character( myData_d$diag_2) <= "239")
+                   | (as.character( myData_d$diag_3) >= "140" & as.character( myData_d$diag_3) <= "239")] <- 1
+#create diagnosis variable for other diseases
+myData_d$diag_other[(as.character( myData_d$diag_1) == "780") | (as.character( myData_d$diag_1) == "781")
+                    | (as.character( myData_d$diag_1) == "784") | (as.character( myData_d$diag_1) >= "790" & as.character( myData_d$diag_1) <= "799")
+                    | (as.character( myData_d$diag_1) >= "240" & as.character( myData_d$diag_1) <= "249") | (as.character( myData_d$diag_1) >= "251" & as.character( myData_d$diag_1) <= "279")
+                    | (as.character( myData_d$diag_1) >= "680" & as.character( myData_d$diag_1) <= "709") | (as.character( myData_d$diag_1) == "782") 
+                    | (as.character( myData_d$diag_1) >= "001" & as.character( myData_d$diag_1) <= "139") | (as.character( myData_d$diag_1) >= "290" & as.character( myData_d$diag_1) <= "319")
+                    | (as.character( myData_d$diag_1) >= "280" & as.character( myData_d$diag_1) <= "289") | (as.character( myData_d$diag_1) >= "320" & as.character( myData_d$diag_1) <= "359")
+                    | (as.character( myData_d$diag_1) >= "630" & as.character( myData_d$diag_1) <= "679") | (as.character( myData_d$diag_1) >= "360" & as.character( myData_d$diag_1) <= "389")
+                    | (as.character( myData_d$diag_1) >= "740" & as.character( myData_d$diag_1) <= "759")
+                    | (startsWith(as.character( myData_d$diag_1), 'E'))
+                    | (startsWith(as.character( myData_d$diag_1), 'V'))
+                    | (as.character( myData_d$diag_2) == "780") | (as.character( myData_d$diag_2) == "781")
+                    | (as.character( myData_d$diag_2) == "784") | (as.character( myData_d$diag_2) >= "790" & as.character( myData_d$diag_2) <= "799")
+                    | (as.character( myData_d$diag_2) >= "240" & as.character( myData_d$diag_2) <= "249") | (as.character( myData_d$diag_2) >= "251" & as.character( myData_d$diag_2) <= "279")
+                    | (as.character( myData_d$diag_2) >= "680" & as.character( myData_d$diag_2) <= "709") | (as.character( myData_d$diag_2) == "782") 
+                    | (as.character( myData_d$diag_2) >= "001" & as.character( myData_d$diag_2) <= "139") | (as.character( myData_d$diag_2) >= "290" & as.character( myData_d$diag_2) <= "319")
+                    | (as.character( myData_d$diag_2) >= "280" & as.character( myData_d$diag_2) <= "289") | (as.character( myData_d$diag_2) >= "320" & as.character( myData_d$diag_2) <= "359")
+                    | (as.character( myData_d$diag_2) >= "630" & as.character( myData_d$diag_2) <= "679") | (as.character( myData_d$diag_2) >= "360" & as.character( myData_d$diag_2) <= "389")
+                    | (as.character( myData_d$diag_2) >= "740" & as.character( myData_d$diag_2) <= "759")
+                    | (startsWith(as.character( myData_d$diag_2), 'E')) 
+                    | (startsWith(as.character( myData_d$diag_2), 'V'))
+                    | (as.character( myData_d$diag_3) == "780") | (as.character( myData_d$diag_3) == "781")
+                    | (as.character( myData_d$diag_3) == "784") | (as.character( myData_d$diag_3) >= "790" & as.character( myData_d$diag_3) <= "799")
+                    | (as.character( myData_d$diag_3) >= "240" & as.character( myData_d$diag_3) <= "249") | (as.character( myData_d$diag_3) >= "251" & as.character( myData_d$diag_3) <= "279")
+                    | (as.character( myData_d$diag_3) >= "680" & as.character( myData_d$diag_3) <= "709") | (as.character( myData_d$diag_3) == "782")
+                    | (as.character( myData_d$diag_3) >= "001" & as.character( myData_d$diag_3) <= "139") | (as.character( myData_d$diag_3) >= "290" & as.character( myData_d$diag_3) <= "319")
+                    | (as.character( myData_d$diag_3) >= "280" & as.character( myData_d$diag_3) <= "289") | (as.character( myData_d$diag_3) >= "320" & as.character( myData_d$diag_3) <= "359")
+                    | (as.character( myData_d$diag_3) >= "630" & as.character( myData_d$diag_3) <= "679") | (as.character( myData_d$diag_3) >= "360" & as.character( myData_d$diag_3) <= "389")
+                    | (as.character( myData_d$diag_3) >= "740" & as.character( myData_d$diag_3) <= "759")
+                    | (startsWith(as.character( myData_d$diag_3), 'E')) 
+                    | (startsWith(as.character( myData_d$diag_3), 'V'))] <- 1
+```
+
+```{r}
+readmission <- myData_d
+```
+
+```{r}
+head(readmission[, c(7:13, 17, 45:54)])
+```
+```{r}
+readmission <- readmission[, c(7:13, 17, 45:54)]
+```
+
+```{r}
+head(readmission)
+```
+
+```{r}
+#combining dummy variables with numerical dataset
+readmission<-cbind(readmission,d)
+```
+
+```{r}
+head(readmission)
+```
+```{r}
+nrow(readmission)
+ncol(readmission)
+```
+```{r}
+#change outcome variable to factor
+readmission$readmitted<-as.factor(readmission$readmitted)
+```
+
+```{r}
+class(readmission$readmitted)
+```
+```{r}
+str(readmission)
+```
+
+```{r}
+#rearrange dataset to have outcome variable in last index position
+readmission<-readmission[,c(1,2,3,4,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,9)]
+```
+
+```{r}
+head(readmission)
+```
+
+##Machine Learning-unsupervised learning
+
+#k-means clustering
+```{r}
+#k-means clustering with numerical dataset
+sapply(readmission_num,function(x)sum(is.na(x)))
+```
+```{r}
+wcss2 = vector()
+for (i in 1:10){
+    model = kmeans(readmission_num, i)
+    wcss2[i] = sum(model$withinss)
+}
+```
+
+```{r}
+wcss = vector()
+for (i in 1:10){
+    print(i)
+    model = kmeans(readmission_num, i)
+    wcss[i] = sum(model$withinss)
+    print(wcss[i])
+}
+```
+```{r}
+wcss = vector()
+for (i in 1:10){
+    model = kmeans(readmission_num, i)
+    wcss[i] = sum(model$withinss)
+}
+
+plot(1:10,
+     wcss,
+     type = 'b',
+     main = paste('The Elbow Method'),
+     xlab = 'Number of clusters',
+     ylab = 'WCSS')
+```
+```{r}
+kmeans = kmeans(x = readmission_num, centers = 3)
+```
+```{r}
+kmeans$cluster
+```
+```{r}
+kmeans$centers
+```
+```{r}
+wcss = kmeans$withinss
+wcss
+```
+```{r}
+sum(kmeans$withinss)
+```
+```{r}
+kmeans$tot.withinss
+```
+```{r}
+y_kmeans = kmeans$cluster
+```
+
+```{r}
+# install.packages('cluster')
+```
+
+```{r}
+library(cluster)
+```
+```{r}
+clusplot(readmission_num,
+         y_kmeans,
+         lines = 0,
+         shade = TRUE,
+         color = TRUE,
+         labels = 2,
+         plotchar = FALSE,
+         span = TRUE,
+         main = 'Clusters of readmissions',
+         xlab = 'time in hospital',
+         ylab = 'number of diagnoses')
+```
+
+#principal component analysis(pca)
+```{r}
+# install.packages('caret')
+# install.packages('e1071')
+library(caret)
+library(e1071)
+```
+
+```{r}
+readmission.pca <- prcomp(readmission_num, center = TRUE,scale. = TRUE)
+```
+
+```{r}
+summary(readmission.pca)
+```
+```{r}
+str(readmission.pca)
+```
+
+```{r}
+library("factoextra")
+get_eigenvalue(readmission.pca)
+```
+
+```{r}
+#using variance:
+library("factoextra")
+fviz_eig(readmission.pca)
+```
+```{r}
+# install.packages("remotes")
+# remotes::install_github("vqv/ggbiplot")
+```
+
+```{r}
+library(ggbiplot)
+ggbiplot(readmission.pca)
+```
+
+
+##Machine Learning-supervised learning
+```{r}
+#split data into train and test
+library(caTools)
+set.seed(123)
+split = sample.split(readmission$readmitted, SplitRatio = 0.7)
+training_set = subset(readmission, split == TRUE)
+test_set = subset(readmission, split == FALSE)
+```
+
+#logistic regression
+```{r}
+#logistic regression
+log.model.1 <- glm(formula=readmitted ~ . , family=binomial,data = training_set)
+```
+```{r}
+summary(log.model.1)
+```
+
+
+```{r}
+#logistic regression
+log.model.2 <- glm(formula=readmitted ~diag_diab+num_procedures+number_inpatient+A1Cresult8+admission_source_id.1 , family=binomial,data = training_set)
+```
+```{r}
+summary(log.model.2)
+```
+
+
+```{r}
+#variable importance for logistic regression
+library(caret)
+importance<-varImp(log.model.1, scale=FALSE)
+importance
+```
+```{r}
+#count number of NA's in test data
+sum(is.na(test_set))
+```
+```{r}
+results = predict(log.model.2, test_set, type='response')
+results
+```
+```{r}
+results_class <- ifelse(results>0.5, 1,0)
+results_class
+```
+```{r}
+table(test_set$readmitted, results_class)
+```
+```{r}
+misClasificError <- mean(results_class != test_set$readmitted)
+print(paste('Accuracy',1-misClasificError))
+```
+```{r}
+#sensitivity=TP/TP+FN
+sensitivity=30/(30+23)
+sensitivity
+#spec=TN/TN+FP
+spec=22/(22+15)
+spec
+```
+
+
+```{r}
+library(pROC)
+roc(test_set$readmitted, results, plot=TRUE,)
+```
+```{r}
+auc(test_set$readmitted, results)
+```
+
+
+#random forest
+```{r}
+#random forest
+#install.packages('randomForest')
+library(randomForest)
+```
+
+```{r}
+RF <- randomForest(formula = readmitted ~ ., method='class',
+                 data = training_set)
+print(RF)
+```
+```{r}
+importance(RF)
+```
+```{r}
+#MeanDecreaseGin --> Importance (IncNodePurity)
+test_set[-42]
+```
+
+```{r}
+# Predicting the Test set results
+y_pred = predict(RF, newdata = test_set)
+```
+
+```{r}
+confusionMatrix(test_set[, 42], y_pred)
+```
+
+#Xgboost
+```{r}
+#Xgboost
+# install.packages('xgboost')
+library(xgboost)
+```
+```{r}
+classifier = xgboost(data = as.matrix(training_set[-42]), label = training_set$readmitted, nrounds = 10)
+```
+```{r}
+y_pred = predict(classifier, newdata = as.matrix(test_set[-42]))
+```
+
+```{r}
+head(y_pred)
+```
+```{r}
+y_pred = (y_pred >= 0.5)
+```
+
+```{r}
+head(y_pred)
+```
+```{r}
+cm = table(test_set[, 42], y_pred)
+cm
+```
+```{r}
+imp_matrix = xgb.importance(model=classifier)
+imp_matrix
+xgb.plot.importance(imp_matrix)
+```
+```{r}
+folds = createFolds(training_set$readmitted, k = 10)
+class(folds)
+```
+
+
+```{r}
+cv = lapply(folds, function(x) {
+  training_fold = training_set[-x, ]
+  test_fold = training_set[x, ]
+  classifier = xgboost(data = as.matrix(training_fold[-42]), label = training_fold$readmitted, nrounds = 10)
+  y_pred = predict(classifier, newdata = as.matrix(test_fold[-42]))
+  y_pred = (y_pred >= 0.5)
+  cm = table(test_fold[, 42], y_pred)
+  accuracy = (cm[2,1]) / (cm[1,1] + cm[2,1])
+  return(accuracy)
+})
+accuracy = mean(as.numeric(cv))
+accuracy
+```
+```{r}
+cv
+```
+
+
+```{r}
+#feature scaling 
+library(caret)
+normParam <- preProcess(training_set, method = c("center", "scale"))
+training_set <- predict(normParam, training_set)
+test_set <- predict(normParam, test_set)
+```
+
+#KNN
+```{r}
+#KNN
+library(class)
+y_pred = knn(train = training_set[, -42],
+             test = test_set[, -42],
+             cl = training_set[, 42],
+             k = 5)
+
+y_pred
+```
+
+```{r}
+# Fitting KNN to the Training set and Predicting the Test set results
+library(class)
+vec = c()
+k_vec = c()
+for (k in 1:50){
+y_pred = knn(train = training_set[, -42],
+             test = test_set[, -42],
+             cl = training_set[, 42],
+             k = 8)
+y_pred
+
+error = mean(y_pred != test_set$readmitted)
+k_vec = c(k_vec, k)
+vec = c(vec, error)}
+```
+
+```{r}
+vec
+```
+
+```{r}
+df.error = data.frame(k_vec,vec)
+df.error
+```
+
+```{r}
+ggplot(df.error, aes(k_vec, vec))+geom_line()
+```
+
+```{r}
+y_pred = knn(train = training_set[, -42],
+             test = test_set[, -42],
+             cl = training_set[, 42],
+             k = 18)
+y_pred
+# Making the Confusion Matrix
+cm = table(test_set[, 42], y_pred)
+cm
+```
+
+```{r}
+confusionMatrix(test_set[, 42], y_pred)
+```
+
+#SVM
+```{r}
+# Fitting SVM to the Training set
+library(e1071)
+classifier = svm(formula = readmitted ~ .,
+                 data = training_set,
+                 kernel = 'linear')
+```
+```{r}
+# Predicting the Test set results
+y_pred = predict(classifier, newdata = test_set[-42])
+print(y_pred)
+# Making the Confusion Matrix
+cm = table(test_set[, 42], y_pred)
+cm
+```
+```{r}
+confusionMatrix(test_set[, 42], y_pred)
+```
+```{r}
+# Fitting SVM to the Training set with radial kernel
+#install.packages('e1071')
+library(e1071)
+classifier = svm(formula = readmitted ~ .,
+                 data = training_set,
+                 kernel = 'radial')
+
+# Predicting the Test set results
+y_pred = predict(classifier, newdata = test_set[-42])
+# 
+# # Making the Confusion Matrix
+cm = table(test_set[, 42], y_pred)
+summary(classifier)
+```
+```{r}
+confusionMatrix(test_set[, 42], y_pred)
+```
+```{r}
+summary(classifier)
+```
+```{r}
+#tuning
+tune.results <- tune(svm,train.x=training_set[,-42],train.y=training_set[,42],kernel='radial',
+                  ranges=list(cost=10^(-1:2), gamma=c(0.25,.5,1,2)))
+```
+
+
+```{r}
+summary(tune.results)
+```
+
+```{r}
+classifier = svm(formula = readmitted ~ .,
+                 data = training_set,
+                 type = 'C-classification',
+                 kernel = 'radial',
+                 cost=10,
+                 gamma=0.25)
+
+#Predicting the Test set results
+y_pred = predict(classifier, newdata = test_set[-42])
+
+#Making the Confusion Matrix
+cm = table(test_set[, 42], y_pred)
+cm
+```
+```{r}
+confusionMatrix(test_set[, 42], y_pred)
+```
+```{r}
+summary(classifier)
+```
+
+#Assessing the models-cross validation
+```{r}
+#cross-validation
+train_control <- trainControl(method = "cv",
+                              number = 5,
+                              classProbs = TRUE,
+                              summaryFunction=twoClassSummary)
+model <- train(readmitted ~., data = readmission,
+               method = "rf",
+               metric="ROC",
+               trControl = train_control)
+```
+
+```{r}
+print(model)
+```
+```{r}
+# install.packages('kernlab')
+```
+
+```{r}
+train_control <- trainControl(method = "cv",
+                              number = 5,
+                              classProbs = TRUE,
+                              summaryFunction=twoClassSummary)
+model <- train(readmitted ~., data = readmission,
+               method = "svmLinear",
+               metric="ROC",
+               trControl = train_control)
+```
+```{r}
+print(model)
+```
+
+##Conclusion
+
+The dataset had 101766 rows and 50 columns.I decided to remove the columns "encounter_id", "patient_nbr" because they are not important, and "weight", "payer_code", and "medical_specialty" since they had a lot of missing values.I also removed the rows with "None" value in the features "max_glu_serum" and "A1Cresult" as it would not provide useful information.I was left with 298 rows and 45 columns after cleaning.
+
+After that, I classified the outcome variable into 2 groups:"YES" and "NO" using a criteria that would be more balanced.It would be difficult to encode dummy variables for "diag_1", "diag_2", and "diag_3" since they have a lot of levels, so I created diagnosis variables with ICD-9 codes.The ML models included k-means clustering, PCA,logistic regression, random forest,Xgboost, KNN, SVM,and cross-validation, using performance metrics such as accuracy, sensitivity,specificity, AUC, and AIC. From my analysis, the winning model is SVM with the highest accuracy of 0.64.
+
